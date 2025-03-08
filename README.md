@@ -1,4 +1,4 @@
-# UniGoal: Navigate to Any Goal in Zero-shot
+# UniGoal: Navigate to Any Goal in Zero-shot!
 ### [Paper]() | [Project Page](https://bagh2178.github.io/UniGoal/) | [Video]() | [中文解读]()
 
 > UniGoal: Towards Universal Zero-shot Goal-oriented Navigation  
