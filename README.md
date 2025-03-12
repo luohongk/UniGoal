@@ -17,14 +17,10 @@ We propose a <b>unified</b> graph representation for <b>zero-shot</b> goal-orien
 
 ## Demo
 ### Real-world Deployment:
-![demo](./assets/demo1.gif)
-![demo](./assets/demo1.gif)
-![demo](./assets/demo1.gif)
+![demo](./assets/demo_real.gif)
 
 ### Simulation Environment:
-![demo](./assets/demo2.gif)
-![demo](./assets/demo2.gif)
-![demo](./assets/demo2.gif)
+![demo](./assets/demo_sim.gif)
 
 Demos are a little bit large; please wait a moment to load them. Welcome to the home page for more complete demos and detailed introductions.
 
