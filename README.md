@@ -1,5 +1,5 @@
 # UniGoal: Navigate to Any Goal in Zero-shot!
-### [Paper]() | [Project Page](https://bagh2178.github.io/UniGoal/) | [Video]() | [中文解读]()
+### [Paper]() | [Project Page](https://bagh2178.github.io/UniGoal/) | [Video](https://cloud.tsinghua.edu.cn/f/d929f1c073d44ba39d91/?dl=1) | [中文解读]()
 
 > UniGoal: Towards Universal Zero-shot Goal-oriented Navigation  
 > [Hang Yin](https://bagh2178.github.io/)*, [Xiuwei Xu](https://xuxw98.github.io/)\* $^\dagger$, [Linqing Zhao](https://lqzhao.github.io/), [Ziwei Wang](https://ziweiwangthu.github.io/), [Jie Zhou](https://scholar.google.com/citations?user=6a79aPwAAAAJ&hl=en&authuser=1), [Jiwen Lu](http://ivg.au.tsinghua.edu.cn/Jiwen_Lu/)$^\ddagger$  
