@@ -36,7 +36,7 @@ Method Pipeline:
 @article{yin2025unigoal, 
       title={UniGoal: Towards Universal Zero-shot Goal-oriented Navigation}, 
       author={Hang Yin and Xiuwei Xu and Linqing Zhao and Ziwei Wang and Jie Zhou and Jiwen Lu},
-      journal={arXiv preprint arXiv:xxxx.xxxxx},
+      journal={arXiv preprint arXiv:2503.10630},
       year={2025}
 }
 ```
