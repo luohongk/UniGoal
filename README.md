@@ -9,6 +9,7 @@
 We propose a <b>unified</b> graph representation for <b>zero-shot</b> goal-oriented navigation. Our method can be directly applied to different kinds of scenes and goals <b>without training</b>.
 
 ## News
+- [2025/04/06]: Release code. Now instance-image-goal is supported. Text-goal and object-goal will be supported soon.
 - [2025/03/08]: Initial update. We are working for ICCV now. Arxiv and code will be released within two weeks.
 - [2025/02/27]: UniGoal is accepted to CVPR 2025!
 
@@ -101,7 +102,7 @@ UniGoal/
 
 Run UniGoal:
 ```
-CUDA_VISIBLE_DEVICES=0 python main.py
+CUDA_VISIBLE_DEVICES=0 python main.py --iin  # instance-image-goal
 ```
 
 ## Citation
