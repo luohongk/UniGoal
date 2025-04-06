@@ -6,14 +6,11 @@
 
 \* Equal contribution $\dagger$ Project leader $\ddagger$ Corresponding author
 
-
 We propose a <b>unified</b> graph representation for <b>zero-shot</b> goal-oriented navigation. Our method can be directly applied to different kinds of scenes and goals <b>without training</b>.
-
 
 ## News
 - [2025/03/08]: Initial update. We are working for ICCV now. Arxiv and code will be released within two weeks.
 - [2025/02/27]: UniGoal is accepted to CVPR 2025!
-
 
 ## Demo
 ### Real-world Deployment:
@@ -24,12 +21,88 @@ We propose a <b>unified</b> graph representation for <b>zero-shot</b> goal-orien
 
 Demos are a little bit large; please wait a moment to load them. Welcome to the home page for more complete demos and detailed introductions.
 
-
 ## Method 
 
 Method Pipeline:
 ![overview](./assets/pipeline.png)
 
+## Installation
+
+**Step 1 (Code)**
+
+Clone UniGoal.
+```
+git clone https://github.com/bagh2178/UniGoal.git
+cd UniGoal
+```
+
+**Step 2 (Environment)**
+
+Create environment.
+```
+conda create -n unigoal python==3.8
+conda activate unigoal
+```
+
+Install habitat-sim==0.2.3 and habitat-lab==0.2.3.
+```
+conda install habitat-sim==0.2.3 -c conda-forge -c aihabitat
+pip install -e third_party/habitat-lab
+```
+
+Install third party packages.
+```
+pip install git+https://github.com/cvg/LightGlue.git
+pip install git+https://github.com/facebookresearch/detectron2.git
+git clone https://github.com/IDEA-Research/Grounded-Segment-Anything.git third_party/Grounded-Segment-Anything
+pip install -e third_party/Grounded-Segment-Anything/segment_anything
+pip install --no-build-isolation -e third_party/Grounded-Segment-Anything/GroundingDINO
+wget -O data/models/sam_vit_h_4b8939.pth https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
+wget -O data/models/groundingdino_swint_ogc.pth https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth
+```
+
+Install other packages.
+```
+conda install pytorch::faiss-gpu
+pip install -r requirements.txt
+```
+
+**Step 3 (Dataset)**
+
+Download HM3D scene dataset from [here](https://api.matterport.com/resources/habitat/hm3d-val-glb-v0.2.tar) and instance-image-goal navigation episodes dataset from [here](https://dl.fbaipublicfiles.com/habitat/data/datasets/imagenav/hm3d/v3/instance_imagenav_hm3d_v3.zip).
+
+The structure of the dataset is outlined as follows:
+```
+UniGoal/
+└── data/
+    ├── datasets/
+    │   └── instance_imagenav/
+    │       └── hm3d/
+    │           └── v3/
+    │               └── val/
+    │                   ├── content/
+    │                   │   ├── 4ok3usBNeis.json.gz
+    │                   │   ├── 5cdEh9F2hJL.json.gz
+    │                   │   ├── ...
+    │                   │   └── zt1RVoi7PcG.json.gz
+    │                   └── val.json.gz
+    └── scene_datasets/
+        └── hm3d_v0.2/
+            └── val/
+                ├── 00800-TEEsavR23oF/
+                │   ├── TEEsavR23oF.basis.glb
+                │   └── TEEsavR23oF.basis.navmesh
+                ├── 00801-HaxA7YrQdEC/
+                ├── ...
+                └── 00899-58NLZxWBSpk/
+```
+
+## Evaluation
+
+Run UniGoal:
+```
+CUDA_VISIBLE_DEVICES=0 python main.py
+```
 
 ## Citation
 ```
