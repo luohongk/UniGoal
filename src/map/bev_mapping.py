@@ -104,19 +104,38 @@ class Mapping(nn.Module):
         min_vision_std = int(self.min_vision // z_resolution)
         around_floor_proj = voxels[..., :min_z].sum(4) 
         under_floor_proj = voxels[..., floor_z:min_z].sum(4) 
-        under_floor_proj = (under_floor_proj == 0.0).float()
-        under_floor_proj = under_floor_proj * around_floor_proj
+        under_floor_proj = (under_floor_proj == 0.0).float()# have floor = 0, no floor or not deteced = 1
+        under_floor_proj = under_floor_proj * around_floor_proj # no floor and detected = 1
 
+        # sever condition
+        # index = (voxels[:, -1, :, :, :].sum((1, 2, 3))-voxels[:, -1, :, :, floor_z:].sum((1, 2, 3))) 
+        # index = voxels[:, -1, :, :, :floor_z].sum((1, 2, 3))
+        # index = torch.nonzero(index > 10)
+
+        # strategy 2 : compare the last row of depth image's depth value
+        # preprocess the depth map due to invalid value of depth
+        # if the number is greater than a half then ...
         replace_element = torch.ones_like(depth[:, -1, :]) * self.min_vision
         re_depth = torch.where(depth[:, -1, :] < 3000, depth[:, -1, :], replace_element)
         count = ((re_depth - self.min_vision - 60) > 0).sum(dim=1)
         index = torch.nonzero(count > (re_depth.shape[1] / 4))
+        # index = torch.nonzero(((re_depth - self.min_vision - 30) > 0).any(dim=1) )
 
         under_floor_proj[index, 0:1, min_vision_std:min_vision_std+1, \
                 (self.vision_range-6)//2 : (self.vision_range+6)//2] \
                     = 1.
 
+        # if torch.equal(torch.zeros_like(around_floor_proj[:, :, :2*min_vision_std, \
+        #     (self.vision_range-min_vision_std)//2 : (self.vision_range+min_vision_std)//2]), \
+        #         around_floor_proj[:, :, :min_vision_std, \
+        #     (self.vision_range-min_vision_std)//2 : (self.vision_range+min_vision_std)//2]):
+        #     # extreme condition
+        #     under_floor_proj[:, 0:1, 1:min_vision_std//2, \
+        #         (self.vision_range-min_vision_std)//2 : (self.vision_range+min_vision_std)//2] \
+        #             = 1.
+
         fp_map_pred = agent_height_proj[:, 0:1, :, :] + under_floor_proj[:, 0:1, :, :]
+        # fp_map_pred = agent_height_proj[:, 0:1, :, :]  # added by someone hexmove
         fp_exp_pred = all_height_proj[:, 0:1, :, :]
         fp_map_pred = fp_map_pred / self.map_pred_threshold
         fp_exp_pred = fp_exp_pred / self.exp_pred_threshold
@@ -215,6 +234,8 @@ class BEV_Map():
         self.local_map_boundary = np.zeros((self.num_scenes, 4)).astype(int)
 
         # Planner pose inputs has 7 dimensions
+        # 1-3 store continuous global agent location
+        # 4-7 store local map boundaries
         self.planner_pose_inputs = np.zeros((self.num_scenes, 7))
     
     def mapping(self, obs, infos):
@@ -222,11 +243,11 @@ class BEV_Map():
         if obs.ndim == 3:
             obs = obs.unsqueeze(0)
         poses = torch.from_numpy(np.asarray(
-            [infos[env_idx]['sensor_pose'] for env_idx
+            [infos['sensor_pose'] for env_idx
              in range(self.num_scenes)])
         ).float().to(self.device)
         agent_heights = torch.from_numpy(np.asarray(
-            [infos[env_idx]['agent_height'] for env_idx in range(self.num_scenes)])
+            [infos['agent_height'] for env_idx in range(self.num_scenes)])
         ).float().to(self.device)
 
         _, self.local_map, _, self.local_pose = \
@@ -241,28 +262,28 @@ class BEV_Map():
             self.local_col = int(local_pose[e, 0] * 100.0 / self.args.map_resolution)
             self.local_map[e, 2:4, self.local_row - 2:self.local_row + 3, self.local_col - 2:self.local_col + 3] = 1.
     
-    def move_local_map(self, e):
-        self.full_map[e, :, self.local_map_boundary[e, 0]:self.local_map_boundary[e, 1], self.local_map_boundary[e, 2]:self.local_map_boundary[e, 3]] = \
-            self.local_map[e]
-        self.full_pose[e] = self.local_pose[e] + \
-            torch.from_numpy(self.origins[e]).to(self.device).float()
+    def move_local_map(self, env_idx=0):
+        self.full_map[env_idx, :, self.local_map_boundary[env_idx, 0]:self.local_map_boundary[env_idx, 1], self.local_map_boundary[env_idx, 2]:self.local_map_boundary[env_idx, 3]] = \
+            self.local_map[env_idx]
+        self.full_pose[env_idx] = self.local_pose[env_idx] + \
+            torch.from_numpy(self.origins[env_idx]).to(self.device).float()
 
-        locs = self.full_pose[e].cpu().numpy()
+        locs = self.full_pose[env_idx].cpu().numpy()
         r, c = locs[1], locs[0]
         loc_r, loc_c = [int(r * 100.0 / self.args.map_resolution),
                         int(c * 100.0 / self.args.map_resolution)]
 
-        self.local_map_boundary[e] = self.get_local_map_boundaries((loc_r, loc_c))
+        self.local_map_boundary[env_idx] = self.get_local_map_boundaries((loc_r, loc_c))
 
-        self.planner_pose_inputs[e, 3:] = self.local_map_boundary[e]
-        self.origins[e] = [self.local_map_boundary[e][2] * self.args.map_resolution / 100.0,
-                        self.local_map_boundary[e][0] * self.args.map_resolution / 100.0, 0.]
+        self.planner_pose_inputs[env_idx, 3:] = self.local_map_boundary[env_idx]
+        self.origins[env_idx] = [self.local_map_boundary[env_idx][2] * self.args.map_resolution / 100.0,
+                        self.local_map_boundary[env_idx][0] * self.args.map_resolution / 100.0, 0.]
 
-        self.local_map[e] = self.full_map[e, :,
-                                self.local_map_boundary[e, 0]:self.local_map_boundary[e, 1],
-                                self.local_map_boundary[e, 2]:self.local_map_boundary[e, 3]]
-        self.local_pose[e] = self.full_pose[e] - \
-            torch.from_numpy(self.origins[e]).to(self.device).float()
+        self.local_map[env_idx] = self.full_map[env_idx, :,
+                                self.local_map_boundary[env_idx, 0]:self.local_map_boundary[env_idx, 1],
+                                self.local_map_boundary[env_idx, 2]:self.local_map_boundary[env_idx, 3]]
+        self.local_pose[env_idx] = self.full_pose[env_idx] - \
+            torch.from_numpy(self.origins[env_idx]).to(self.device).float()
 
     def get_local_map_boundaries(self, agent_loc):
         loc_r, loc_c = agent_loc
@@ -311,29 +332,29 @@ class BEV_Map():
             self.local_pose[e] = self.full_pose[e] - \
                 torch.from_numpy(self.origins[e]).to(self.device).float()
 
-    def init_map_and_pose_for_env(self, e):
-        self.full_map[e].fill_(0.)
-        self.full_pose[e].fill_(0.)
-        self.full_pose[e, :2] = self.args.map_size_cm / 100.0 / 2.0
+    def init_map_and_pose_for_env(self, env_idx=0):
+        self.full_map[env_idx].fill_(0.)
+        self.full_pose[env_idx].fill_(0.)
+        self.full_pose[env_idx, :2] = self.args.map_size_cm / 100.0 / 2.0
 
-        locs = self.full_pose[e].cpu().numpy()
-        self.planner_pose_inputs[e, :3] = locs
+        locs = self.full_pose[env_idx].cpu().numpy()
+        self.planner_pose_inputs[env_idx, :3] = locs
         r, c = locs[1], locs[0]
         loc_r, loc_c = [int(r * 100.0 / self.args.map_resolution),
                         int(c * 100.0 / self.args.map_resolution)]
 
-        self.full_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.0
+        self.full_map[env_idx, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.0
 
-        self.local_map_boundary[e] = self.get_local_map_boundaries((loc_r, loc_c))
+        self.local_map_boundary[env_idx] = self.get_local_map_boundaries((loc_r, loc_c))
 
-        self.planner_pose_inputs[e, 3:] = self.local_map_boundary[e]
-        self.origins[e] = [self.local_map_boundary[e][2] * self.args.map_resolution / 100.0,
-                      self.local_map_boundary[e][0] * self.args.map_resolution / 100.0, 0.]
+        self.planner_pose_inputs[env_idx, 3:] = self.local_map_boundary[env_idx]
+        self.origins[env_idx] = [self.local_map_boundary[env_idx][2] * self.args.map_resolution / 100.0,
+                      self.local_map_boundary[env_idx][0] * self.args.map_resolution / 100.0, 0.]
 
-        self.local_map[e] = self.full_map[e, :, self.local_map_boundary[e, 0]:self.local_map_boundary[e, 1], self.local_map_boundary[e, 2]:self.local_map_boundary[e, 3]]
-        self.local_pose[e] = self.full_pose[e] - \
-            torch.from_numpy(self.origins[e]).to(self.device).float()
+        self.local_map[env_idx] = self.full_map[env_idx, :, self.local_map_boundary[env_idx, 0]:self.local_map_boundary[env_idx, 1], self.local_map_boundary[env_idx, 2]:self.local_map_boundary[env_idx, 3]]
+        self.local_pose[env_idx] = self.full_pose[env_idx] - \
+            torch.from_numpy(self.origins[env_idx]).to(self.device).float()
 
-    def update_intrinsic_rew(self, e):
-        self.full_map[e, :, self.local_map_boundary[e, 0]:self.local_map_boundary[e, 1], self.local_map_boundary[e, 2]:self.local_map_boundary[e, 3]] = \
-            self.local_map[e]
+    def update_intrinsic_rew(self, env_idx=0):
+        self.full_map[env_idx, :, self.local_map_boundary[env_idx, 0]:self.local_map_boundary[env_idx, 1], self.local_map_boundary[env_idx, 2]:self.local_map_boundary[env_idx, 3]] = \
+            self.local_map[env_idx]

@@ -26,11 +26,7 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         self.device = torch.device("cuda",  \
             int(config_env.habitat.simulator.habitat_sim_v0.gpu_device_id))
         self.episodes_dir = os.path.join("data/datasets/instance_imagenav/hm3d/v3", self.split)
-
-        # Initializations
         self.episode_no = 0
-        self.dump_location = "tmp"
-        self.exp_name = "exp1"
 
         # Scene info
         self.last_scene_path = None
@@ -64,6 +60,15 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         self.rgb_frames = []
         self.depth_frames = []
         self.transform_frames = []
+        self.name2index = {
+            "chair": 0,
+            "sofa": 1,
+            "plant": 2,
+            "bed": 3,
+            "toilet": 4,
+            "tv_monitor": 5,
+        }
+        self.index2name = {v: k for k, v in self.name2index.items()}
 
     def load_new_episode(self):
         """The function loads a fixed episode from the episode dataset. This
@@ -110,14 +115,6 @@ class InstanceImageGoal_Env(habitat.RLEnv):
 
 
     def update_after_reset(self):
-        name2index = {
-            "chair": 0,
-            "sofa": 1,
-            "plant": 2,
-            "bed": 3,
-            "toilet": 4,
-            "tv_monitor": 5,
-        }
         args = self.args
 
         self.scene_path = self.habitat_env.sim.config.sim_cfg.scene_id
@@ -148,7 +145,7 @@ class InstanceImageGoal_Env(habitat.RLEnv):
 
         self.goal_idx = 0
         self.goal_name = goal_name
-        self.gt_goal_idx = name2index[goal_name]
+        self.gt_goal_idx = self.name2index[goal_name]
         self.goal_object_id = int(self._env.current_episode.goal_object_id)
         
 
@@ -198,7 +195,7 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         """
         args = self.args
         self.global_step = 0
-        new_scene = self.episode_no % args.num_train_episodes == 0
+        new_scene = self.episode_no % args.num_eval_episodes == 0
 
 
 
@@ -210,8 +207,8 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         self.path_length = 1e-5
         self.trajectory_states = []
        
-        if self.args.environment == 'habitat':  # added by someone
-            obs = super().reset()  # habitat
+        if self.args.environment == 'habitat':
+            obs = super().reset()
         self.info['top_down_map'] = (self.habitat_env.get_metrics())['top_down_map']
         self.update_after_reset()
         if 'semantic' in obs:
@@ -229,7 +226,7 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         rgb = obs['rgb'].astype(np.uint8)
         depth = obs['depth']
         state = np.concatenate((rgb, depth), axis=2).transpose(2, 0, 1)
-        if self.args.environment == 'habitat':  # added by someone
+        if self.args.environment == 'habitat':
             self.last_sim_location = self.get_sim_location()
         # upstair or downstair check
         # self.start_height = self._env.current_episode.start_position[1]
@@ -240,19 +237,12 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         self.start_position = self._env.sim.get_agent_state(0).position
         self.start_rotation = self._env.sim.get_agent_state(0).rotation
         self.transform_matrix = self.get_transformation_matrix()
-
             
         torch.set_grad_enabled(False)
-
 
         self.info['goal_cat_id'] = self.gt_goal_idx
         self.info['instance_imagegoal'] = obs['instance_imagegoal']
         self.instance_imagegoal = obs['instance_imagegoal']
-
-
-        # idx = self.get_goal_id()
-        # if idx is not None:
-        #     self.gt_goal_idx = idx
 
         print(f"rank:{self.rank}, episode:{self.episode_no}, cat_id:{self.gt_goal_idx}, cat_name:{self.goal_name}")
         torch.set_grad_enabled(True)
@@ -263,10 +253,15 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         self.info['goal_cat_id'] = self.gt_goal_idx
         self.info['goal_name'] = self.goal_name
         self.info['agent_height'] = self.agent_height
-        self.info['goal_key'] = self.habitat_env.current_episode.goal_key  # added by someone
+        self.info['goal_key'] = self.habitat_env.current_episode.goal_key
         
 
         return state, self.info
+    
+    def set_goal_cat_id(self, idx):
+        self.gt_goal_idx = idx
+        self.info['goal_cat_id'] = idx
+        self.info['goal_name'] = self.index2name[idx]
 
     def step(self, action):
         """Function to take an action in the environment.
@@ -295,9 +290,9 @@ class InstanceImageGoal_Env(habitat.RLEnv):
 
 
         if self.args.environment == 'habitat':
-            obs, rew, done, _ = super().step(action)  # habitat
-        self.info['top_down_map'] = (self.habitat_env.get_metrics())['top_down_map']  # habitat
-        self.transform_matrix = self.get_transformation_matrix()  # habitat
+            obs, rew, done, _ = super().step(action)
+        self.info['top_down_map'] = (self.habitat_env.get_metrics())['top_down_map']
+        self.transform_matrix = self.get_transformation_matrix()
     
         if 'semantic' in obs:
             semantic_obs = obs['semantic']
@@ -305,19 +300,18 @@ class InstanceImageGoal_Env(habitat.RLEnv):
             self.semantic_obs = sem
             self.sign = np.any(sem > 0)
 
-        agent_state = self._env.sim.get_agent_state(0).position  # habitat
-        self.agent_height = self.args.camera_height + agent_state[1] - self.start_height  # habitat
-        self.info['agent_height'] = self.agent_height  # habitat
-        # self.info['agent_height'] = 1.3  # added by someone
+        agent_state = self._env.sim.get_agent_state(0).position
+        self.agent_height = self.args.camera_height + agent_state[1] - self.start_height
+        self.info['agent_height'] = self.agent_height
 
         # Get pose change
-        dx, dy, do = self.get_pose_change(obs)  # habitat
+        dx, dy, do = self.get_pose_change(obs)
         self.info['sensor_pose'] = [dx, dy, do]
         self.path_length += get_l2_distance(0, dx, 0, dy)
 
         spl, success, dist = 0., 0., 0.
         if done:
-            spl, success, dist, soft_spl = self.get_metrics()  # habitat
+            spl, success, dist, soft_spl = self.get_metrics()
             self.info['distance_to_goal'] = dist
             self.info['spl'] = spl
             self.info['success'] = success
@@ -332,7 +326,7 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         self.timestep += 1
         self.info['time'] = self.timestep
 
-        return state, rew, done, self.info, obs  # modified by someone
+        return state, rew, done, self.info, obs
 
     def get_reward_range(self):
         """This function is not used, Habitat-RLEnv requires this function"""
@@ -343,7 +337,7 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         if d > 6. :
             d = 6.
         if self.args.environment == 'habitat':
-            curr_sim_pose = self.get_sim_location()  # habitat
+            curr_sim_pose = self.get_sim_location()
         dx, dy, do = get_rel_pose_change(
             curr_sim_pose, self.last_sim_location)
         reward =  10. * s
@@ -394,7 +388,7 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         """Returns dx, dy, do pose change of the agent relative to the last
         timestep."""
         if self.args.environment == 'habitat':
-            curr_sim_pose = self.get_sim_location()  # habitat
+            curr_sim_pose = self.get_sim_location()
         dx, dy, do = get_rel_pose_change(
             curr_sim_pose, self.last_sim_location)
         self.last_sim_location = curr_sim_pose
@@ -456,37 +450,3 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         relative_transform = np.dot(initial_transform_inverse, current_transform)
 
         return relative_transform
-    
-    def get_real_robot_obs(self):
-        obs = {
-            'rgb': None,
-            'depth': None,
-            'semantic': np.zeros([480,640,1],dtype=np.uint32),
-        }
-        rgb_image_byte_io, depth_image, pose, timestamp = self.agent('get_rgbd_image', 'FemtoBolt_down', 'pose', 'jpg', 'xy_and_yaw')
-        rgb_image_byte_io.seek(0)
-        rgb_image = np.array(Image.open(rgb_image_byte_io))
-        obs['rgb'], obs['depth'] = rgb_image, depth_image
-        # obs['depth'] = (obs['depth'] / 65536.0).astype(np.float32)
-        obs['depth'] = (obs['depth'] / 10.0).astype(np.float32)
-        obs['depth'] = np.expand_dims(obs['depth'], axis=2)
-        position_x, position_y, yaw = pose
-        obs['gps'] = np.array([position_x, position_y])
-        obs['compass'] = np.array([yaw])
-        obs['instance_imagegoal'] = self.goal_image
-        return obs
-    
-    def real_robot_step(self, action):
-        if action == 0:  # added by someone
-            self.agent('stop')
-            done = True
-        elif action['action'] == 1:
-            self.agent('move_forward')
-        elif action['action'] == 2:
-            self.agent('turn_left')
-        elif action['action'] == 3:
-            self.agent('turn_right')
-        time.sleep(1)
-
-
-    
