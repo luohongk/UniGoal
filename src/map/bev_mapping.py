@@ -107,35 +107,16 @@ class Mapping(nn.Module):
         under_floor_proj = (under_floor_proj == 0.0).float()# have floor = 0, no floor or not deteced = 1
         under_floor_proj = under_floor_proj * around_floor_proj # no floor and detected = 1
 
-        # sever condition
-        # index = (voxels[:, -1, :, :, :].sum((1, 2, 3))-voxels[:, -1, :, :, floor_z:].sum((1, 2, 3))) 
-        # index = voxels[:, -1, :, :, :floor_z].sum((1, 2, 3))
-        # index = torch.nonzero(index > 10)
-
-        # strategy 2 : compare the last row of depth image's depth value
-        # preprocess the depth map due to invalid value of depth
-        # if the number is greater than a half then ...
         replace_element = torch.ones_like(depth[:, -1, :]) * self.min_vision
         re_depth = torch.where(depth[:, -1, :] < 3000, depth[:, -1, :], replace_element)
         count = ((re_depth - self.min_vision - 60) > 0).sum(dim=1)
         index = torch.nonzero(count > (re_depth.shape[1] / 4))
-        # index = torch.nonzero(((re_depth - self.min_vision - 30) > 0).any(dim=1) )
 
         under_floor_proj[index, 0:1, min_vision_std:min_vision_std+1, \
                 (self.vision_range-6)//2 : (self.vision_range+6)//2] \
                     = 1.
 
-        # if torch.equal(torch.zeros_like(around_floor_proj[:, :, :2*min_vision_std, \
-        #     (self.vision_range-min_vision_std)//2 : (self.vision_range+min_vision_std)//2]), \
-        #         around_floor_proj[:, :, :min_vision_std, \
-        #     (self.vision_range-min_vision_std)//2 : (self.vision_range+min_vision_std)//2]):
-        #     # extreme condition
-        #     under_floor_proj[:, 0:1, 1:min_vision_std//2, \
-        #         (self.vision_range-min_vision_std)//2 : (self.vision_range+min_vision_std)//2] \
-        #             = 1.
-
         fp_map_pred = agent_height_proj[:, 0:1, :, :] + under_floor_proj[:, 0:1, :, :]
-        # fp_map_pred = agent_height_proj[:, 0:1, :, :]  # added by someone hexmove
         fp_exp_pred = all_height_proj[:, 0:1, :, :]
         fp_map_pred = fp_map_pred / self.map_pred_threshold
         fp_exp_pred = fp_exp_pred / self.exp_pred_threshold

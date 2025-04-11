@@ -86,25 +86,25 @@ def main():
 
     goal_maps[global_goals[0], global_goals[1]] = 1
 
-    planner_inputs = {}
-    planner_inputs['map_pred'] = BEV_map.local_map[0, 0, :, :].cpu().numpy()
-    planner_inputs['exp_pred'] = BEV_map.local_map[0, 1, :, :].cpu().numpy()
-    planner_inputs['pose_pred'] = BEV_map.planner_pose_inputs[0]
-    planner_inputs['goal'] = goal_maps
-    planner_inputs['exp_goal'] = goal_maps * 1
-    planner_inputs['new_goal'] = 1
-    planner_inputs['found_goal'] = 0
-    planner_inputs['wait'] = wait_env or finished
-    planner_inputs['sem_map'] = BEV_map.local_map[0, 4:11, :, :
+    agent_input = {}
+    agent_input['map_pred'] = BEV_map.local_map[0, 0, :, :].cpu().numpy()
+    agent_input['exp_pred'] = BEV_map.local_map[0, 1, :, :].cpu().numpy()
+    agent_input['pose_pred'] = BEV_map.planner_pose_inputs[0]
+    agent_input['goal'] = goal_maps
+    agent_input['exp_goal'] = goal_maps * 1
+    agent_input['new_goal'] = 1
+    agent_input['found_goal'] = 0
+    agent_input['wait'] = wait_env or finished
+    agent_input['sem_map'] = BEV_map.local_map[0, 4:11, :, :
                                         ].cpu().numpy()
     if args.visualize:
         BEV_map.local_map[0, 10, :, :] = 1e-5
-        planner_inputs['sem_map_pred'] = BEV_map.local_map[0, 4:11, :, :
+        agent_input['sem_map_pred'] = BEV_map.local_map[0, 4:11, :, :
                                             ].argmax(0).cpu().numpy()
 
     episode_idx = 0
 
-    obs, _, done, infos, observations_habitat = agent.step(planner_inputs)
+    obs, _, done, infos, observations_habitat = agent.step(agent_input)
 
     graph.reset()
     graph.set_obj_goal(infos['goal_name'])
@@ -141,18 +141,12 @@ def main():
             graph.set_obj_goal(infos['goal_name'])
             if args.goal_type == 'ins-image':
                 graph.set_image_goal(infos['instance_imagegoal'])
-            # sample = text_goal_dataset['attribute_data'][infos[e]['goal_key']]
-            # text_goal = sample['intrinsic_attributes'] + sample['extrinsic_attributes']
-            # text_goal = 'A water dispenser, behind a chair'
-            # graph.set_text_goal(text_goal)
 
         BEV_map.mapping(obs, infos)
 
         navigate_steps = global_step * args.num_local_steps + local_step
         graph.set_navigate_steps(navigate_steps)
-        # graph.set_room_map(self.room_map)
-        # graph.set_fbe_free_map(self.fbe_free_map)
-        if not planner_inputs['wait'] and navigate_steps % 2 == 0:
+        if not agent_input['wait'] and navigate_steps % 2 == 0:
             graph.set_observations(observations_habitat)
             graph.update_scenegraph()
 
@@ -191,24 +185,24 @@ def main():
 
         exp_goal_maps = goal_maps.copy()
 
-        planner_inputs = {}
-        planner_inputs['map_pred'] = BEV_map.local_map[0, 0, :, :].cpu().numpy()
-        planner_inputs['exp_pred'] = BEV_map.local_map[0, 1, :, :].cpu().numpy()
-        planner_inputs['pose_pred'] = BEV_map.planner_pose_inputs[0]
-        planner_inputs['goal'] = goal_maps
-        planner_inputs['exp_goal'] = exp_goal_maps
-        planner_inputs['new_goal'] = local_step == args.num_local_steps - 1
-        planner_inputs['found_goal'] = found_goal
-        planner_inputs['wait'] = wait_env or finished
-        planner_inputs['sem_map'] = BEV_map.local_map[0, 4:11, :, :
+        agent_input = {}
+        agent_input['map_pred'] = BEV_map.local_map[0, 0, :, :].cpu().numpy()
+        agent_input['exp_pred'] = BEV_map.local_map[0, 1, :, :].cpu().numpy()
+        agent_input['pose_pred'] = BEV_map.planner_pose_inputs[0]
+        agent_input['goal'] = goal_maps
+        agent_input['exp_goal'] = exp_goal_maps
+        agent_input['new_goal'] = local_step == args.num_local_steps - 1
+        agent_input['found_goal'] = found_goal
+        agent_input['wait'] = wait_env or finished
+        agent_input['sem_map'] = BEV_map.local_map[0, 4:11, :, :
                                         ].cpu().numpy()
 
         if args.visualize:
             BEV_map.local_map[0, 10, :, :] = 1e-5
-            planner_inputs['sem_map_pred'] = BEV_map.local_map[0, 4:11, :,
+            agent_input['sem_map_pred'] = BEV_map.local_map[0, 4:11, :,
                                                 :].argmax(0).cpu().numpy()
 
-        obs, _, done, infos, observations_habitat = agent.step(planner_inputs)
+        obs, _, done, infos, observations_habitat = agent.step(agent_input)
 
         # ------------------------------------------------------------------
 
