@@ -98,11 +98,21 @@ UniGoal/
                 └── 00899-58NLZxWBSpk/
 ```
 
+**Step 4 (LLM and VLM)**
+
+Option 1: Install Ollama.
+```
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.2-vision
+```
+
+Option 2: Use LLM and VLM via your own API. Change the `llm_model`, `vlm_model`, `api_key`, `base_url` in the configuration file `configs/config_habitat.yaml` to your own.
+
 ## Evaluation
 
 Run UniGoal:
 ```
-CUDA_VISIBLE_DEVICES=0 python main.py --iin  # instance-image-goal
+CUDA_VISIBLE_DEVICES=0 python main.py  # instance-image-goal
 ```
 
 ## Citation
