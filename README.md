@@ -70,7 +70,7 @@ pip install -r requirements.txt
 
 **Step 3 (Dataset)**
 
-Download HM3D scene dataset from [here](https://api.matterport.com/resources/habitat/hm3d-val-glb-v0.2.tar) and instance-image-goal navigation episodes dataset from [here](https://dl.fbaipublicfiles.com/habitat/data/datasets/imagenav/hm3d/v3/instance_imagenav_hm3d_v3.zip).
+Download HM3D scene dataset from [here](https://api.matterport.com/resources/habitat/hm3d-val-habitat-v0.2.tar) and instance-image-goal navigation episodes dataset from [here](https://dl.fbaipublicfiles.com/habitat/data/datasets/imagenav/hm3d/v3/instance_imagenav_hm3d_v3.zip).
 
 The structure of the dataset is outlined as follows:
 ```
