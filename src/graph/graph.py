@@ -652,7 +652,6 @@ Please provide the relationship you can determine from the image.
                     new_edges[i].set_relation(relation)
             self.clear_line()
             # discriminate all relation proposals
-            self.free_map = self.fbe_free_map.cpu().numpy()[0,0,::-1].copy() > 0.5
             for i, new_edge in enumerate(new_edges):
                 print(f'        discriminate_relation  {i}/{len(new_edges)}...')
                 if new_edge.relation == None:
