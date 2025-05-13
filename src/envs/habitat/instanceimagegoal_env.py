@@ -12,6 +12,7 @@ import json
 from PIL import Image
 import time
 
+from configs.categories import name2index
 from src.utils.fmm.pose_utils import get_l2_distance, get_rel_pose_change
 
 
@@ -26,7 +27,7 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         self.device = torch.device("cuda",  \
             int(config_env.habitat.simulator.habitat_sim_v0.gpu_device_id))
         self.episodes_dir = os.path.join("data/datasets/instance_imagenav/hm3d/v3", self.split)
-        self.episode_no = 0
+        self.episode_no = -1
 
         # Scene info
         self.last_scene_path = None
@@ -60,14 +61,7 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         self.rgb_frames = []
         self.depth_frames = []
         self.transform_frames = []
-        self.name2index = {
-            "chair": 0,
-            "sofa": 1,
-            "plant": 2,
-            "bed": 3,
-            "toilet": 4,
-            "tv_monitor": 5,
-        }
+        self.name2index = name2index
         self.index2name = {v: k for k, v in self.name2index.items()}
 
     def load_new_episode(self):
@@ -209,7 +203,6 @@ class InstanceImageGoal_Env(habitat.RLEnv):
        
         if self.args.environment == 'habitat':
             obs = super().reset()
-        self.info['top_down_map'] = (self.habitat_env.get_metrics())['top_down_map']
         self.update_after_reset()
         if 'semantic' in obs:
             semantic_obs = obs['semantic']
@@ -254,9 +247,10 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         self.info['goal_name'] = self.goal_name
         self.info['agent_height'] = self.agent_height
         self.info['goal_key'] = self.habitat_env.current_episode.goal_key
+        self.info['episode_no'] = self.episode_no
         
 
-        return state, self.info
+        return obs, self.info
     
     def set_goal_cat_id(self, idx):
         self.gt_goal_idx = idx
@@ -291,7 +285,6 @@ class InstanceImageGoal_Env(habitat.RLEnv):
 
         if self.args.environment == 'habitat':
             obs, rew, done, _ = super().step(action)
-        self.info['top_down_map'] = (self.habitat_env.get_metrics())['top_down_map']
         self.transform_matrix = self.get_transformation_matrix()
     
         if 'semantic' in obs:
@@ -326,7 +319,7 @@ class InstanceImageGoal_Env(habitat.RLEnv):
         self.timestep += 1
         self.info['time'] = self.timestep
 
-        return state, rew, done, self.info, obs
+        return obs, done, self.info
 
     def get_reward_range(self):
         """This function is not used, Habitat-RLEnv requires this function"""

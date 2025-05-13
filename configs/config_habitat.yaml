@@ -7,7 +7,7 @@ sim_gpu_id: 1
 log_interval: 10
 save_interval: 1
 dump_location: "./outputs/experiments/"
-experiment_id: "20250405_(wo_rl)_(matchpoint90_dis50)"
+experiment_id: "experiment_0"
 save_periodic: 50000
 visualize: 1
 environment: "habitat"

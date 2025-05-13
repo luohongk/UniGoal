@@ -31,6 +31,7 @@ from .utils.mapping import compute_spatial_similarities, merge_detections_to_obj
 from ..utils.fmm.fmm_planner import FMMPlanner
 from ..utils.fmm import pose_utils as pu
 from ..utils.camera import get_camera_matrix
+from ..utils.map import remove_small_frontiers
 
 sys.path.append('third_party/Grounded-Segment-Anything/')
 from grounded_sam_demo import load_model, get_grounding_output
@@ -180,7 +181,6 @@ class Graph():
         self.full_width = full_width
         self.full_height = full_height
         self.visited = torch.zeros(full_width, full_height).float().cpu().numpy()
-        self.num_of_goal = torch.zeros(full_width, full_height).int()
         self.device = args.device
         self.classes = ['item']
         self.BG_CLASSES = ["wall", "floor", "ceiling"]
@@ -209,24 +209,6 @@ class Graph():
         self.N_max = 10
         self.node_space = 'table. tv. chair. cabinet. sofa. bed. windows. kitchen. bedroom. living room. mirror. plant. curtain. painting. picture'
         self.relations = ["next to", "opposite to", "below", "behind", "in front of"]
-        # self.console = rich.console.Console()
-        # self.prompt_llava = 'Describe the central object in this image.'
-        self.prompt_llava = 'Use one word to describe the central object in this image.'
-        # self.prompt_gpt = 'In a house, whether {} is often in a close proximity to a {}, please answer with "often" or "hardly".'
-        self.prompt_gpt = '''
-You need to predict the most likely distance of two objects in a room. You only need to answer "near" or "far". Unless the two are closely related, always answer "far". Here are two examples. 
-1. table and chair, you should answer "near". (Because there is always a chair next to the table.)
-2. door and cabinet, you should answer "far". (Because door and cabinets are not necessarily in the same place.)
-Now predict the distance of {} and {}.
-        '''
-        self.prompt_gpt = '''
-You need to predict the most likely distance of two objects in a room. You only need to answer the distance in meters. Here are 4 examples. 
-1. book and bookshelf, you should answer "0.1". (Because book is in bookshelf.)
-2. table and chair, you should answer "0.5". (Because there is always a chair next to the table.)
-3. door and cabinet, you should answer "2". (Because door and cabinets are not necessarily in the same place but in the same room.)
-4. bed and sofa, you should answer "5". (Because bed is in bedroom but sofa is in living room.)
-Now predict the distance of {} and {}, and give your reason.
-        '''
         self.prompt_edge_proposal = '''
 Provide the most possible single spatial relationship for each of the following object pairs. Answer with only one relationship per pair, and separate each answer with a newline character.
 Examples:
@@ -244,17 +226,7 @@ on
 next to
 Object pair(s):
         '''
-        self.prompt_discriminate_relation = '''
-In the image, do {} and {} satisfy the relationship of {}? Answer "yes" or "no".
-        '''
-        self.prompt_score_subgraph = '''
-Please guess the most possible distance between these several objects and this target in the room respectively, in meters, ranging from 0.1 to 5 meters. Only answer one number.
-This group of objects is {}.
-The target is {}.
-        '''
         self.prompt_room_predict = 'Which room is the most likely to have the [{}] in: [{}]. Only answer the room.'
-        self.prompt_object_predict = 'The {} is most likely to appear near which of the following objects: {}'
-        self.prompt_graph_corr = 'What is the probability of A and B appearing together. A:[{}], B:[{}]. Even if you do not have enough information, you have to answer with a value from 0 to 1 anyway. Answer only the value of probability and do not answer any other text.'
         self.prompt_graph_corr_0 = 'What is the probability of A and B appearing together. [A:{}], [B:{}]. Even if you do not have enough information, you have to answer with a value from 0 to 1 anyway. Answer only the value of probability and do not answer any other text.'
         self.prompt_graph_corr_1 = 'What else do you need to know to determine the probability of A and B appearing together? [A:{}], [B:{}]. Please output a short question (output only one sentence with no additional text).'
         self.prompt_graph_corr_2 = 'Here is the objects and relationships near A: [{}] You answer the following question with a short sentence based on this information. Question: {}'
@@ -275,8 +247,6 @@ Example output format if no relation:
 Please provide the relationship you can determine from the image.
         """
         self.grounded_sam = self.get_grounded_sam(self.device)
-        # self.GSAM2_server_port = 7003
-        # self.GSAM2_Client = GSAM2_Client(server_port=self.GSAM2_server_port)
         self.graphbuilder = GraphBuilder(self.get_llm_response)
         self.goalgraphdecomposer = GoalGraphDecomposer(self.get_llm_response)
         self.extractor = DISK(max_num_keypoints=2048).eval().to(self.device)
@@ -841,9 +811,9 @@ Please provide the relationship you can determine from the image.
     def get_goal(self, goal=None):
         fbe_map = torch.zeros_like(self.full_map[0,0])
         if self.full_map.shape[1] == 1:
-            fbe_map[self.fbe_free_map[0,0]>0] = 1 # first free 
+            fbe_map[self.fbe_free_map[0,0]>0] = 1
         else:
-            fbe_map[self.full_map[0,1]>0] = 1 # first free 
+            fbe_map[self.full_map[0,1]>0] = 1
         fbe_map[skimage.morphology.binary_dilation(self.full_map[0,0].cpu().numpy(), skimage.morphology.disk(4))] = 3 # then dialte obstacle
 
         fbe_cp = copy.deepcopy(fbe_map)
@@ -855,14 +825,12 @@ Please provide the relationship you can determine from the image.
         
         diff = fbe_map - fbe_cpp # intersection between unknown area and free area 
         frontier_map = diff == 1
-        frontier_map = frontier_map & (self.num_of_goal < 3).to(frontier_map.device)
-        # frontier_map = self.frontier_map
+        frontier_map = remove_small_frontiers(frontier_map, min_size=20)
         frontier_locations = torch.stack([torch.where(frontier_map)[0], torch.where(frontier_map)[1]]).T
         num_frontiers = len(torch.where(frontier_map)[0])
         if num_frontiers == 0:
             return None
         
-        # for each frontier, calculate the inverse of distance
         input_pose = np.zeros(7)
         input_pose[:3] = self.full_pose.cpu().numpy()
         input_pose[1] = self.map_size_cm/100 - input_pose[1]
@@ -878,8 +846,7 @@ Please provide the relationship you can determine from the image.
         frontier_locations = frontier_locations.cpu().numpy()
         distances = fmm_dist[frontier_locations[:,0],frontier_locations[:,1]] / 20
         
-        ## use the threshold of 1.6 to filter close frontiers to encourage exploration
-        distance_threshold = 3
+        distance_threshold = 1.2
         idx_16 = np.where(distances>=distance_threshold)
         distances_16 = distances[idx_16]
         distances_16_inverse = 10 - (np.clip(distances_16, 0, 10 + distance_threshold) - distance_threshold)
@@ -899,28 +866,19 @@ Please provide the relationship you can determine from the image.
             state = [goal[0] + 1, goal[1] + 1]
             planner.set_goal(state)
             fmm_dist = planner.fmm_dist[::-1]
-            frontier_locations += 1
-            frontier_locations = frontier_locations.cpu().numpy()
             distances = fmm_dist[frontier_locations[:,0],frontier_locations[:,1]] / 20
             
-            ## use the threshold of 1.6 to filter close frontiers to encourage exploration
-            distance_threshold = 3
-            idx_16 = np.where(distances>=distance_threshold)
             distances_16 = distances[idx_16]
             distances_16_inverse = 1 - (np.clip(distances_16, 0, 10 + distance_threshold) - distance_threshold) / 10
-            frontier_locations_16 = frontier_locations[idx_16]
-            self.frontier_locations = frontier_locations
-            self.frontier_locations_16 = frontier_locations_16
             if len(distances_16) == 0:
                 return None
-            num_16_frontiers = len(idx_16[0])
             scores += distances_16_inverse
 
         idx_16_max = idx_16[0][np.argmax(scores)]
         goal = frontier_locations[idx_16_max] - 1
         self.scores = scores
         return goal
-    
+
     def get_traversible(self, map_pred, pose_pred):
         if isinstance(map_pred, torch.Tensor):
             map_pred = map_pred.cpu().numpy()
@@ -984,7 +942,6 @@ Please provide the relationship you can determine from the image.
         self.full_width = full_width
         self.full_height = full_height
         self.visited = torch.zeros(full_width, full_height).float().cpu().numpy()
-        self.num_of_goal = torch.zeros(full_width, full_height).int()
         self.segment2d_results = []
         self.objects = MapObjectList(device=self.device)
         self.objects_post = MapObjectList(device=self.device)

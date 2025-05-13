@@ -31,8 +31,8 @@ def get_config():
         
     args = SimpleNamespace(**args)
 
-    is_debugging = sys.gettrace() is not None
-    if is_debugging:
+    args.is_debugging = sys.gettrace() is not None
+    if args.is_debugging:
         args.experiment_id = "debug"
     
     args.log_dir = os.path.join(args.dump_location, args.experiment_id, 'log')
@@ -76,9 +76,9 @@ def main():
     agent = UniGoal_Agent(args, envs)
 
     BEV_map.init_map_and_pose()
-    obs, infos = agent.reset()
+    obs, rgbd, infos = agent.reset()
 
-    BEV_map.mapping(obs, infos)
+    BEV_map.mapping(rgbd, infos)
 
     global_goals = [args.local_width // 2, args.local_height // 2]
 
@@ -104,7 +104,7 @@ def main():
 
     episode_idx = 0
 
-    obs, _, done, infos, observations_habitat = agent.step(agent_input)
+    obs, rgbd, done, infos = agent.step(agent_input)
 
     graph.reset()
     graph.set_obj_goal(infos['goal_name'])
@@ -131,7 +131,7 @@ def main():
             if len(episode_success) == args.num_episodes:
                 finished = True
             if args.visualize:
-                video_path = os.path.join(args.visualization_dir, 'videos', 'eps_{:0>6}_{}.mp4'.format(infos['episode_no'], int(success)))
+                video_path = os.path.join(args.visualization_dir, 'videos', 'eps_{:0>6}.mp4'.format(infos['episode_no']))
                 agent.save_visualization(video_path)
             wait_env = True
             BEV_map.update_intrinsic_rew()
@@ -142,12 +142,12 @@ def main():
             if args.goal_type == 'ins-image':
                 graph.set_image_goal(infos['instance_imagegoal'])
 
-        BEV_map.mapping(obs, infos)
+        BEV_map.mapping(rgbd, infos)
 
         navigate_steps = global_step * args.num_local_steps + local_step
         graph.set_navigate_steps(navigate_steps)
         if not agent_input['wait'] and navigate_steps % 2 == 0:
-            graph.set_observations(observations_habitat)
+            graph.set_observations(obs)
             graph.update_scenegraph()
 
         # ------------------------------------------------------------------
@@ -202,7 +202,7 @@ def main():
             agent_input['sem_map_pred'] = BEV_map.local_map[0, 4:11, :,
                                                 :].argmax(0).cpu().numpy()
 
-        obs, _, done, infos, observations_habitat = agent.step(agent_input)
+        obs, rgbd, done, infos = agent.step(agent_input)
 
         # ------------------------------------------------------------------
 

@@ -41,7 +41,7 @@ class UniGoal_Agent():
 
         self.selem = skimage.morphology.disk(3)
 
-        self.obs = None
+        self.rgbd = None
         self.obs_shape = None
         self.collision_map = None
         self.visited = None
@@ -74,7 +74,7 @@ class UniGoal_Agent():
         torch.set_grad_enabled(False)
 
         if args.visualize:
-            self.vis_image = None
+            self.vis_image_background = None
             self.rgb_vis = None
             self.vis_image_list = []
 
@@ -88,13 +88,14 @@ class UniGoal_Agent():
         if idx is not None:
             self.envs.set_goal_cat_id(idx)
 
-        self.raw_obs = obs[:3, :, :].transpose(1, 2, 0)
-        self.raw_depth = obs[3:4, :, :]
+        rgbd = np.concatenate((obs['rgb'].astype(np.uint8), obs['depth']), axis=2).transpose(2, 0, 1)
+        self.raw_obs = rgbd[:3, :, :].transpose(1, 2, 0)
+        self.raw_depth = rgbd[3:4, :, :]
 
-        obs, seg_predictions = self.preprocess_obs(obs)
-        self.obs = obs
+        rgbd, seg_predictions = self.preprocess_obs(rgbd)
+        self.rgbd = rgbd
 
-        self.obs_shape = obs.shape
+        self.obs_shape = rgbd.shape
 
         # Episode initializations
         map_shape = (args.map_size_cm // args.map_resolution,
@@ -120,9 +121,9 @@ class UniGoal_Agent():
 
         if args.visualize:
             episode_info = 'episode_id: {}, goal: {}, goal_key: {}, goal_image_id: {}'.format(self.envs.habitat_env.current_episode.episode_id, self.envs.habitat_env.current_episode.object_category, self.envs.habitat_env.current_episode.goal_key, self.envs.habitat_env.current_episode.goal_image_id)
-            self.vis_image = init_vis_image(self.envs.goal_name, episode_info, self.args)
+            self.vis_image_background = init_vis_image(self.envs.goal_name, episode_info, self.args)
 
-        return obs, info
+        return obs, rgbd, info
 
     def local_feature_match_lightglue(self, re_key2=False):
         with torch.set_grad_enabled(False):
@@ -165,15 +166,15 @@ class UniGoal_Agent():
         return bins[max_index]
 
     def compute_ins_goal_map(self, whwh, start, start_o):
-        goal_mask = np.zeros_like(self.obs[3, :, :])
+        goal_mask = np.zeros_like(self.rgbd[3, :, :])
         goal_mask[whwh[1]:whwh[3], whwh[0]:whwh[2]] = 1
-        semantic_mask = (self.obs[4+self.envs.gt_goal_idx, :, :] > 0) & (goal_mask > 0)
+        semantic_mask = (self.rgbd[4+self.envs.gt_goal_idx, :, :] > 0) & (goal_mask > 0)
 
         depth_h, depth_w = np.where(semantic_mask > 0)
-        goal_dis = self.obs[3, :, :][depth_h, depth_w] / self.args.map_resolution
+        goal_dis = self.rgbd[3, :, :][depth_h, depth_w] / self.args.map_resolution
 
-        goal_angle = -self.args.hfov / 2 * (depth_w - self.obs.shape[2]/2) \
-        / (self.obs.shape[2]/2)
+        goal_angle = -self.args.hfov / 2 * (depth_w - self.rgbd.shape[2]/2) \
+        / (self.rgbd.shape[2]/2)
         goal = [start[0]+goal_dis*np.sin(np.deg2rad(start_o+goal_angle)), \
             start[1]+goal_dis*np.cos(np.deg2rad(start_o+goal_angle))]
         goal_map = np.zeros((self.local_width, self.local_height))
@@ -195,7 +196,7 @@ class UniGoal_Agent():
                  int(c * 100.0 / self.args.map_resolution - gy1)]
         start = pu.threshold_poses(start, map_pred.shape)
 
-        goal_mask = self.obs[4+self.envs.gt_goal_idx, :, :]
+        goal_mask = self.rgbd[4+self.envs.gt_goal_idx, :, :]
 
         if self.instance_imagegoal is None:
             # not initialized
@@ -243,10 +244,10 @@ class UniGoal_Agent():
             else:
                 goal_map = self.compute_ins_goal_map(whwh, start, start_o)
                 if not np.any(goal_map>0) :
-                    tgoal_dis = self.compute_ins_dis_v1(self.obs[3, :, :], whwh) / self.args.map_resolution
+                    tgoal_dis = self.compute_ins_dis_v1(self.rgbd[3, :, :], whwh) / self.args.map_resolution
                     rgb_center = np.array([whwh[3]+whwh[1], whwh[2]+whwh[0]])//2
-                    goal_angle = -self.args.hfov / 2 * (rgb_center[1] - self.obs.shape[2]/2) \
-                    / (self.obs.shape[2]/2)
+                    goal_angle = -self.args.hfov / 2 * (rgb_center[1] - self.rgbd.shape[2]/2) \
+                    / (self.rgbd.shape[2]/2)
                     goal = [start[0]+tgoal_dis*np.sin(np.deg2rad(start_o+goal_angle)), \
                         start[1]+tgoal_dis*np.cos(np.deg2rad(start_o+goal_angle))]
                     goal = pu.threshold_poses(goal, map_pred.shape)
@@ -360,14 +361,7 @@ class UniGoal_Agent():
         if agent_input["wait"]:
             self.last_action = None
             self.envs.info["sensor_pose"] = [0., 0., 0.]
-            self.envs.info['episode_no'] = self.envs.episode_no
-            # self.info['frontier_map'] = self.get_frontier_map(planner_inputs)
-            return np.zeros(self.obs.shape), 0., False, self.envs.info, None
-
-        # Reset reward if new long-term goal
-        if agent_input["new_goal"]:
-            self.envs.info["g_reward"] = 0
-
+            return None, np.zeros(self.rgbd.shape), False, self.envs.info
 
         id_lo_whwh = self.pred_box
 
@@ -387,29 +381,24 @@ class UniGoal_Agent():
 
         if action >= 0:
             action = {'action': action}
-            obs, rew, done, info, observations_habitat = self.envs.step(action)
-            self.raw_obs = obs[:3, :, :].transpose(1, 2, 0)
-            self.raw_depth = obs[3:4, :, :]
+            obs, done, info = self.envs.step(action)
+            rgbd = np.concatenate((obs['rgb'].astype(np.uint8), obs['depth']), axis=2).transpose(2, 0, 1)
+            self.raw_obs = rgbd[:3, :, :].transpose(1, 2, 0)
+            self.raw_depth = rgbd[3:4, :, :]
 
-            obs, seg_predictions = self.preprocess_obs(obs) 
+            rgbd, seg_predictions = self.preprocess_obs(rgbd) 
             self.last_action = action['action']
-            self.obs = obs
-            self.envs.info = info
-
-            info['g_reward'] += rew
-
-            self.envs.info['episode_no'] = self.envs.episode_no
+            self.rgbd = rgbd
 
             if done:
-                self.reset()
+                obs, rgbd, info = self.reset()
 
-            return obs, rew, done, info, observations_habitat
+            return obs, rgbd, done, self.envs.info
 
         else:
             self.last_action = None
             self.envs.info["sensor_pose"] = [0., 0., 0.]
-            self.envs.info['episode_no'] = self.envs.episode_no
-            return np.zeros(self.obs_shape), 0., False, self.envs.info, None
+            return None, np.zeros(self.obs_shape), False, self.envs.info
 
     def get_action(self, planner_inputs):
         """Function responsible for planning
@@ -770,9 +759,8 @@ class UniGoal_Agent():
         # sem_map_vis = insert_s_goal(self.s_goal, sem_map_vis, goal)
         sem_map_vis = cv2.resize(sem_map_vis, (480, 480),
                                  interpolation=cv2.INTER_NEAREST)
-        rgb_visualization = self.rgb_vis
         if self.args.environment == 'habitat':
-            tmp = cv2.resize(rgb_visualization, (360, 480), interpolation=cv2.INTER_NEAREST)
+            rgb_visualization = cv2.resize(self.rgb_vis, (360, 480), interpolation=cv2.INTER_NEAREST)
 
         # tmp_goal = cv2.resize(self.instance_imagegoal, (480, 480), interpolation=cv2.INTER_NEAREST)
         instance_imagegoal = self.instance_imagegoal
@@ -783,18 +771,19 @@ class UniGoal_Agent():
             instance_imagegoal = instance_imagegoal[:, w // 2 - h // 2:w // 2 + h // 2]
         tmp_goal = cv2.resize(instance_imagegoal, (215, 215), interpolation=cv2.INTER_NEAREST)
         tmp_goal = cv2.cvtColor(tmp_goal, cv2.COLOR_RGB2BGR)
+        vis_image = self.vis_image_background.copy()
         if self.args.environment == 'habitat':
-            self.vis_image[50:265, 25:240] = tmp_goal
-        self.vis_image[50:530, 650:1130] = sem_map_vis
+            vis_image[50:265, 25:240] = tmp_goal
+        vis_image[50:530, 650:1130] = sem_map_vis
         if self.args.environment == 'habitat':
-            self.vis_image[50:530, 265:625] = tmp
+            vis_image[50:530, 265:625] = rgb_visualization
         # self.vis_image[50:530, 495:510] = [255,255,255]
         if self.args.environment == 'habitat':
-            cv2.rectangle(self.vis_image, (25, 50), (240, 265), (128, 128, 128), 1)
-            cv2.rectangle(self.vis_image, (25, 315), (240, 530), (128, 128, 128), 1)
-        cv2.rectangle(self.vis_image, (650, 50), (1130, 530), (128, 128, 128), 1)
+            cv2.rectangle(vis_image, (25, 50), (240, 265), (128, 128, 128), 1)
+            cv2.rectangle(vis_image, (25, 315), (240, 530), (128, 128, 128), 1)
+        cv2.rectangle(vis_image, (650, 50), (1130, 530), (128, 128, 128), 1)
         if self.args.environment == 'habitat':
-            cv2.rectangle(self.vis_image, (265, 50), (625, 530), (128, 128, 128), 1)
+            cv2.rectangle(vis_image, (265, 50), (625, 530), (128, 128, 128), 1)
 
         pos = (
             (start_x * 100. / args.map_resolution - gy1)
@@ -808,15 +797,18 @@ class UniGoal_Agent():
         color = (int(color_palette[11] * 255),
                  int(color_palette[10] * 255),
                  int(color_palette[9] * 255))
-        cv2.drawContours(self.vis_image, [agent_arrow], 0, color, -1)
+        cv2.drawContours(vis_image, [agent_arrow], 0, color, -1)
 
-        if args.visualize:
-            self.vis_image_list.append(self.vis_image.copy())
-            tmp_dir = 'outputs/tmp'
-            os.makedirs(tmp_dir, exist_ok=True)
-            height, width, layers = self.vis_image.shape
-            cv2.imwrite(os.path.join(tmp_dir, 'v.jpg'), cv2.resize(self.vis_image, (width // 2, height // 2)))
+        self.vis_image_list.append(vis_image)
+        tmp_dir = 'outputs/tmp'
+        os.makedirs(tmp_dir, exist_ok=True)
+        height, width, layers = vis_image.shape
+        if self.args.is_debugging:
+            image_name = 'debug.jpg'
+        else:
+            image_name = 'v.jpg'
+        cv2.imwrite(os.path.join(tmp_dir, image_name), cv2.resize(vis_image, (width // 2, height // 2)))
     
     def save_visualization(self, video_path):
-        save_video(self.vis_image_list, video_path)
+        save_video(self.vis_image_list, video_path, fps=15, input_color_space="BGR")
         self.vis_image_list = []

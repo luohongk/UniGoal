@@ -869,6 +869,7 @@ class TopDownMap(Measure):
         if hasattr(episode, "goals"):
             # draw source and target parts last to avoid overlap
             self._draw_goals_view_points(episode)
+            self._draw_goals_aabb(episode)
             self._draw_goals_positions(episode)
             self._draw_shortest_path(episode, agent_position)
 

@@ -34,4 +34,20 @@ categories_id_mapping = {
     39: 14,  # bottle
 }
 
-
+name2index = {
+    "chair": 0,
+    "sofa": 1,
+    "plant": 2,
+    "bed": 3,
+    "toilet": 4,
+    "tv_monitor": 5,
+    "table": 6,
+    "oven": 7,
+    "sink": 8,
+    "refrigerator": 9,
+    "book": 10,
+    "clock": 11,
+    "vase": 12,
+    "cup": 13,
+    "bottle": 14,
+}
