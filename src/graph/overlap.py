@@ -6,11 +6,6 @@ from scipy.spatial.distance import cosine
 from heapq import heappush, heappop
 from grakel import Graph, kernels
 
-# 假设这个 llm 函数是由外部提供的，输入是 prompt，输出是自然语言描述的相对位置
-def llm(prompt):
-    # 这里只是一个示例实现，实际情况下你需要调用真实的 LLM 服务
-    # 例如：return "The position of node B relative to node A is [1, 0]."
-    return "The position of node B relative to node A is [1, 0]."
 
 class GraphMatcher:
     def __init__(self, graph1, graph2, llm=None):
@@ -102,25 +97,20 @@ class GraphMatcher:
         if not common_nodes:
             return relative_positions
 
-        # Select the first common node as the reference point
         ref_node = list(common_nodes)[0]
 
-        # Calculate the relative positions for all other common nodes
         for node in common_nodes:
             if node == ref_node:
                 continue
-            # Use LLM to predict the relative position
             prompt = f"Given the following information: {ref_node} and {node}. Please provide the relative position of {node} with respect to {ref_node} in the format [x, y]."
-            response = llm(prompt)
-            # Parse the response to get the relative position
+            response = self.llm(prompt)
             try:
                 rel_pos_str = response.split("[")[1].split("]")[0]
                 rel_pos = [float(coord.strip()) for coord in rel_pos_str.split(",")]
                 key = tuple((node, ref_node))
                 relative_positions[key] = rel_pos
             except (IndexError, ValueError) as e:
-                print(f"Failed to parse LLM response: {response}")
-                print(f"Error: {e}")
+                pass
 
         positions = {}
         ref_node = next(iter(relative_positions))[1]

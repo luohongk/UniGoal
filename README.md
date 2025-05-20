@@ -9,7 +9,8 @@
 We propose a <b>unified</b> graph representation for <b>zero-shot</b> goal-oriented navigation. Our method can be directly applied to different kinds of scenes and goals <b>without training</b>.
 
 ## News
-- [2025/04/06]: Release code. Now instance-image-goal is supported. Text-goal and object-goal will be supported soon.
+- [2025/05/13]: Fix bugs on environment installation and inference. Object-goal will be supported in two weeks.
+- [2025/04/06]: Release code. Now instance-image-goal and text-goal are supported.
 - [2025/03/08]: Initial update. We are working for ICCV now. Arxiv and code will be released within two weeks.
 - [2025/02/27]: UniGoal is accepted to CVPR 2025!
 
@@ -73,13 +74,20 @@ pip install -r requirements.txt
 
 **Step 2 (Dataset)**
 
-Download HM3D scene dataset from [here](https://api.matterport.com/resources/habitat/hm3d-val-habitat-v0.2.tar) and instance-image-goal navigation episodes dataset from [here](https://dl.fbaipublicfiles.com/habitat/data/datasets/imagenav/hm3d/v3/instance_imagenav_hm3d_v3.zip).
+Download HM3D **scene** dataset from [here](https://api.matterport.com/resources/habitat/hm3d-val-habitat-v0.2.tar).
+
+Download **instance-image-goal** navigation episodes dataset from [here](https://dl.fbaipublicfiles.com/habitat/data/datasets/imagenav/hm3d/v3/instance_imagenav_hm3d_v3.zip).
+
+Download **text-goal** navigation episodes dataset from [here](https://drive.google.com/uc?export=download&id=1KNdv6isX1FDZi4KCVPiECYDxijg9cZ3L).
 
 The structure of the dataset is outlined as follows:
 ```
 UniGoal/
 └── data/
     ├── datasets/
+    │   ├── textnav/
+    │   │   └── val/
+    │   │       └── val_text.json.gz
     │   └── instance_imagenav/
     │       └── hm3d/
     │           └── v3/
@@ -115,8 +123,36 @@ Option 2: Use LLM and VLM via your own API. Change the `llm_model`, `vlm_model`,
 
 Run UniGoal:
 ```
-python main.py  # instance-image-goal
+python main.py --goal_type ins-image  # instance-image-goal
+python main.py --goal_type text # text-goal
 ```
+
+## Code Structure
+
+Core:
+
+- **`main.py`**: Entrance for running UniGoal.
+- **`src/agent/`**:
+  - **`unigoal/agent.py`**: Interface of UniGoal agent which gets the observation and generates and conducts the low-level actions.
+- **`src/graph/`**:
+  - **`graph.py`**: The implementation of goal graph and scene graph.
+  - **`goalgraphdecomposer.py`**: The implementation of the decomposer of graphs.
+  - **`graphbuilder.py`**: The implementation of the builder of graphs.
+- **`src/map/`**:
+  - **`bev_mapping.py`**: The implementation of occupancy map.
+
+Environment:
+
+- **`src/envs/`**:
+  - **`habitat/instanceimagegoal_env.py`**: Wrapper of habitat env to deploy goal-orineted navigation tasks.
+- **`src/utils/`**:
+  - **`fmm`**: Implementation of Fast Marching Method (FMM).
+  - **`visualization/`**: Visualizer of UniGoal.
+  - **`camera.py`**: Camera parameters.
+  - **`llm.py`**: Wrapper of LLM and VLM.
+  - **`map.py`**: Utility functions of bev mapping.
+  - **`model.py`**: Some models of FMM.
+- **`configs/`**: Configuration files of UniGoal.
 
 ## Citation
 ```
