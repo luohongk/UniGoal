@@ -62,7 +62,7 @@ class RLTaskEnv(habitat.RLEnv):
         return (-np.inf, np.inf)
 
     def get_reward(self, observations):
-        current_measure = self._env.get_metrics()[self._reward_measure_name]
+        current_measure = self.habitat_env.get_metrics()[self._reward_measure_name]
         reward = self.config.task.slack_reward
 
         reward += current_measure
@@ -73,11 +73,11 @@ class RLTaskEnv(habitat.RLEnv):
         return reward
 
     def _episode_success(self):
-        return self._env.get_metrics()[self._success_measure_name]
+        return self.habitat_env.get_metrics()[self._success_measure_name]
 
     def get_done(self, observations):
         done = False
-        if self._env.episode_over:
+        if self.habitat_env.episode_over:
             done = True
         if self.config.task.end_on_success and self._episode_success():
             done = True

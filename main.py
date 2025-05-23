@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import numpy as np
 import torch
 import argparse
-from src.envs.habitat import construct_envs
+from src.envs import construct_envs
 from src.agent.unigoal.agent import UniGoal_Agent
 from src.map.bev_mapping import BEV_Map
 from src.graph.graph import Graph
@@ -21,6 +21,9 @@ def get_config():
     parser.add_argument("--config-file", default="configs/config_habitat.yaml",
                         metavar="FILE", help="path to config file", type=str)
     parser.add_argument("--goal_type", default="ins-image", type=str)
+    parser.add_argument("--episode_id", default=-1, type=int, help="episode id, 0~999")
+    parser.add_argument("--goal", default="", type=str)
+    parser.add_argument("--real_world", action="store_true")
 
     args = parser.parse_args()
 
@@ -106,8 +109,6 @@ def main():
         agent_input['sem_map_pred'] = BEV_map.local_map[0, 4:11, :, :
                                             ].argmax(0).cpu().numpy()
 
-    episode_idx = 0
-
     obs, rgbd, done, infos = agent.step(agent_input)
 
     graph.reset()
@@ -127,7 +128,6 @@ def main():
         local_step = step % args.num_local_steps
 
         if done:
-            episode_idx += 1
             spl = infos['spl']
             success = infos['success']
             success = success if success is not None else 0.0
@@ -137,7 +137,7 @@ def main():
             if len(episode_success) == args.num_episodes:
                 finished = True
             if args.visualize:
-                video_path = os.path.join(args.visualization_dir, 'videos', 'eps_{:0>6}_{}.mp4'.format(infos['episode_no'], int(success)))
+                video_path = os.path.join(args.visualization_dir, 'videos', 'eps_{:0>6}.mp4'.format(infos['episode_no']))
                 agent.save_visualization(video_path)
             wait_env = True
             BEV_map.update_intrinsic_rew()
@@ -219,7 +219,7 @@ def main():
         if step % args.log_interval == 0:
             log = " ".join([
                 "num timesteps {},".format(step),
-                "episode_idx {}".format(episode_idx),
+                "episode_id {}".format(infos['episode_no']),
             ])
 
             total_success = []

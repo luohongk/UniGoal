@@ -17,7 +17,9 @@ from src.utils.visualization.semantic_prediction import SemanticPredMaskRCNN
 from src.utils.visualization.visualization import (
     init_vis_image,
     draw_line,
-    get_contour_points
+    get_contour_points,
+    line_list,
+    add_text_list
 )
 from src.utils.visualization.save import save_video
 from src.utils.llm import LLM
@@ -88,8 +90,10 @@ class UniGoal_Agent():
 
         obs, info = self.envs.reset()
 
-        self.instance_imagegoal = self.envs.instance_imagegoal
-        self.text_goal = self.envs.text_goal
+        if self.args.goal_type == 'ins-image':
+            self.instance_imagegoal = self.envs.instance_imagegoal
+        elif self.args.goal_type == 'text':
+            self.text_goal = self.envs.text_goal
         idx = self.get_goal_cat_id()
         if idx is not None:
             self.envs.set_goal_cat_id(idx)
@@ -126,8 +130,7 @@ class UniGoal_Agent():
         self.frontier_vis = None
 
         if args.visualize:
-            episode_info = 'episode_id: {}, goal: {}, goal_key: {}, goal_image_id: {}'.format(self.envs.habitat_env.current_episode.episode_id, self.envs.habitat_env.current_episode.object_category, self.envs.habitat_env.current_episode.goal_key, self.envs.habitat_env.current_episode.goal_image_id)
-            self.vis_image_background = init_vis_image(self.envs.goal_name, episode_info, self.args)
+            self.vis_image_background = init_vis_image(self.envs.goal_name, self.args)
 
         return obs, rgbd, info
 
@@ -204,7 +207,7 @@ class UniGoal_Agent():
 
         goal_mask = self.rgbd[4+self.envs.gt_goal_idx, :, :]
 
-        if self.instance_imagegoal is None:
+        if self.instance_imagegoal is None and self.text_goal is None:
             # not initialized
             return planner_inputs
         elif self.global_goal is not None:
@@ -689,7 +692,11 @@ class UniGoal_Agent():
             return None
         elif self.args.goal_type == 'text':
             for i in range(10):
-                text_goal_id = self.llm(self.prompt_text2object.replace('{text}', self.text_goal['intrinsic_attributes']))
+                if isinstance(self.text_goal, dict) and 'intrinsic_attributes' in self.text_goal:  
+                    text_goal = self.text_goal['intrinsic_attributes']
+                else:
+                    text_goal = self.text_goal
+                text_goal_id = self.llm(self.prompt_text2object.replace('{text}', text_goal))
                 try:
                     text_goal_id = re.findall(r'\d+', text_goal_id)[0]
                     text_goal_id = int(text_goal_id)
@@ -754,13 +761,14 @@ class UniGoal_Agent():
         sem_map[goal_mask] = 4
         # </goal>
 
-        locs = np.array(self.envs.habitat_env.current_episode.goals[0].position[:2]) + np.array([18, 18])
-        r, c = locs[1], locs[0]
-        loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-                        int(c * 100.0 / args.map_resolution)]
+        if self.args.environment == 'habitat':
+            locs = np.array(self.envs._env.current_episode.goals[0].position[:2]) + np.array([18, 18])
+            r, c = locs[1], locs[0]
+            loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                            int(c * 100.0 / args.map_resolution)]
 
-        if gx1 + 1 <= loc_c < gx2 - 1 and gy1 + 1 <= loc_r < gy2 - 1:
-            sem_map[loc_r - gy1 - 1:loc_r - gy1 + 2, loc_c - gx1 - 1:loc_c - gx1 + 2] = [255, 0, 0]
+            if gx1 + 1 <= loc_c < gx2 - 1 and gy1 + 1 <= loc_r < gy2 - 1:
+                sem_map[loc_r - gy1 - 1:loc_r - gy1 + 2, loc_c - gx1 - 1:loc_c - gx1 + 2] = [255, 0, 0]
 
         color_pal = [int(x * 255.) for x in color_palette]
         sem_map_vis = Image.new("P", (sem_map.shape[1],
@@ -778,21 +786,27 @@ class UniGoal_Agent():
             rgb_visualization = cv2.resize(self.rgb_vis, (360, 480), interpolation=cv2.INTER_NEAREST)
 
         vis_image = self.vis_image_background.copy()
-        if self.args.goal_type == 'ins-image' or self.args.goal_type == 'text':
+        if self.args.goal_type == 'ins-image':
             instance_imagegoal = self.instance_imagegoal
             h, w = instance_imagegoal.shape[0], instance_imagegoal.shape[1]
             if h > w:
                 instance_imagegoal = instance_imagegoal[h // 2 - w // 2:h // 2 + w // 2, :]
             elif w > h:
                 instance_imagegoal = instance_imagegoal[:, w // 2 - h // 2:w // 2 + h // 2]
-            tmp_goal = cv2.resize(instance_imagegoal, (215, 215), interpolation=cv2.INTER_NEAREST)
-            tmp_goal = cv2.cvtColor(tmp_goal, cv2.COLOR_RGB2BGR)
+            instance_imagegoal = cv2.resize(instance_imagegoal, (215, 215), interpolation=cv2.INTER_NEAREST)
+            instance_imagegoal = cv2.cvtColor(instance_imagegoal, cv2.COLOR_RGB2BGR)
             if self.args.environment == 'habitat':
-                vis_image[50:265, 25:240] = tmp_goal
+                vis_image[50:265, 25:240] = instance_imagegoal
+        elif self.args.goal_type == 'text':
+            if isinstance(self.text_goal, dict) and 'intrinsic_attributes' in self.text_goal and 'extrinsic_attributes' in self.text_goal:
+                text_goal = self.text_goal['intrinsic_attributes'] + ' ' + self.text_goal['extrinsic_attributes']
+            else:
+                text_goal = self.text_goal
+            text_goal = line_list(text_goal)[:12]
+            add_text_list(vis_image[50:265, 25:240], text_goal)
         vis_image[50:530, 650:1130] = sem_map_vis
         if self.args.environment == 'habitat':
             vis_image[50:530, 265:625] = rgb_visualization
-        # self.vis_image[50:530, 495:510] = [255,255,255]
         if self.args.environment == 'habitat':
             cv2.rectangle(vis_image, (25, 50), (240, 265), (128, 128, 128), 1)
             cv2.rectangle(vis_image, (25, 315), (240, 530), (128, 128, 128), 1)

@@ -30,7 +30,7 @@ def draw_line(start, end, mat, steps=25, w=1):
     return mat
 
 
-def init_vis_image(goal_name, episode_info, args):
+def init_vis_image(goal_name, args):
     vis_image = np.ones((655-100, 1380-200-25, 3)).astype(np.uint8) * 255
     font = cv2.FONT_HERSHEY_SIMPLEX
     fontScale = 1
@@ -95,3 +95,20 @@ def init_vis_image(goal_name, episode_info, args):
                             cv2.LINE_AA)
     
     return vis_image
+
+
+def line_list(text, line_length=22):
+    text_list = []
+    for i in range(0, len(text), line_length):
+        text_list.append(text[i:(i + line_length)])
+    return text_list
+
+
+def add_text_list(image: np.ndarray, text_list: list, position=(10, 20), font=cv2.FONT_HERSHEY_SIMPLEX, font_scale=0.5, color=(0, 0, 0), thickness=1, highlight_line_index=[]):
+    highlight_color = (0, 0, 0)
+    not_highlight_color = (128, 128, 128)
+    for i, text in enumerate(text_list):
+        position_i = (position[0], position[1] + i * 15)
+        color = highlight_color if len(highlight_line_index) == 0 or i in highlight_line_index else not_highlight_color
+        cv2.putText(image, text, position_i, font, font_scale, color, thickness, cv2.LINE_AA)
+    return image

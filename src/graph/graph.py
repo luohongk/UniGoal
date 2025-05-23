@@ -290,7 +290,7 @@ Please provide the relationship you can determine from the image.
         self.set_text_goal(text_goal)
 
     def set_text_goal(self, text_goal):
-        if isinstance(text_goal, dict):
+        if isinstance(text_goal, dict) and 'intrinsic_attributes' in text_goal and 'extrinsic_attributes' in text_goal:
             text_goal = text_goal['intrinsic_attributes'] + ' ' + text_goal['extrinsic_attributes']
         self.text_goal = text_goal
         self.goalgraph = self.graphbuilder.build_graph_from_text(text_goal)

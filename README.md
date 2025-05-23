@@ -121,10 +121,26 @@ Option 2: Use LLM and VLM via your own API. Change the `llm_model`, `vlm_model`,
 
 ## Evaluation
 
-Run UniGoal:
+Run UniGoal on benchmarks:
 ```
 python main.py --goal_type ins-image  # instance-image-goal
 python main.py --goal_type text # text-goal
+```
+
+## Inference
+
+Run UniGoal on the user-specified episode and goal:
+```
+python main.py --goal_type ins-image [--episode_id <episode_id>] [--goal "path/to/image.png"]  # or .jpg
+python main.py --goal_type text [--episode_id <episode_id>] [--goal "The chair is white, with a ..."]
+```
+
+## Real-world
+
+In `src/envs/real_world_env.py`, the functions `step`, `get_observation`, `get_agent_pose` should be implemented.
+Run UniGoal in real-world environment:
+```
+python main.py --goal_type <goal_type> --goal <goal> --real_world
 ```
 
 ## Code Structure
