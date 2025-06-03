@@ -305,6 +305,24 @@ Please provide the relationship you can determine from the image.
     def set_full_pose(self, full_pose):
         self.full_pose = full_pose
 
+    def update_value_map(self, bev_map):
+        """
+        根据场景图信息更新 BEV_Map 对象中的价值地图
+        
+        Args:
+            bev_map: 要更新的 BEV_Map 对象
+        """
+        # 从场景图中获取物体节点
+        object_nodes = [node for node in self.nodes if isinstance(node, ObjectNode)]
+        
+        # 如果有目标，获取目标位置
+        goal_position = None
+        if hasattr(self, 'goal_node') and self.goal_node is not None and hasattr(self.goal_node, 'center'):
+            goal_position = self.goal_node.center
+            
+        # 更新价值地图
+        bev_map.update_value_map(object_nodes=object_nodes, goal_position=goal_position)
+
     def get_scenegraph(self):
         nodes = self.nodes
         edges = self.get_edges()

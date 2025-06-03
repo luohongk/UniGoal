@@ -425,31 +425,44 @@ class UniGoal_Agent():
 
         self.last_loc = self.curr_loc
 
-        # Get Map prediction
-        map_pred = np.rint(planner_inputs['map_pred'])
-        goal = planner_inputs['goal']
+        # 获取地图预测和构建障碍物网格
+        grid = 1 - np.rint(planner_inputs['map_pred'])
+        # 概率转换为对数比率（log-odds）
+        grid = grid.astype(np.float32)
+        
+        # 应用价值地图影响路径规划（如果提供了价值地图）
+        if 'value_map' in planner_inputs:
+            # 将价值地图缩放到 [0, 0.5] 范围，
+            # 这确保它可以影响但不会完全覆盖可通行性
+            value_influence = planner_inputs['value_map'] * 0.5
+            # 将价值地图的影响应用到网格上（在高价值区域减少成本）
+            grid = grid - value_influence
+            # 确保网格值保持在有效范围 [0, 1] 内
+            grid = np.clip(grid, 0.0, 1.0)
 
-        # Get pose prediction and global policy planning window
+        # 获取姿态预测和全局策略规划窗口
         start_x, start_y, start_o, gx1, gx2, gy1, gy2 = \
             planner_inputs['pose_pred']
         gx1, gx2, gy1, gy2 = int(gx1), int(gx2), int(gy1), int(gy2)
         planning_window = [gx1, gx2, gy1, gy2]
 
-        # Get curr loc
+        # 获取目标
+        goal = planner_inputs['goal']
+
+        # 获取当前位置
         self.curr_loc = [start_x, start_y, start_o]
         r, c = start_y, start_x
         start = [int(r * 100.0 / args.map_resolution - gx1),
                  int(c * 100.0 / args.map_resolution - gy1)]
-        start = pu.threshold_poses(start, map_pred.shape)\
+        start = pu.threshold_poses(start, grid.shape)
         
-        # Get last loc
+        # 获取上一个位置
         last_start_x, last_start_y = self.last_loc[0], self.last_loc[1]
         r, c = last_start_y, last_start_x
         last_start = [int(r * 100.0 / args.map_resolution - gx1),
                         int(c * 100.0 / args.map_resolution - gy1)]
-        last_start = pu.threshold_poses(last_start, map_pred.shape)
-        # self.visited[gx1:gx2, gy1:gy2][start[0] - 0:start[0] + 1,
-        #                                start[1] - 0:start[1] + 1] = 1
+        last_start = pu.threshold_poses(last_start, grid.shape)
+        
         rr, cc, _ = line_aa(last_start[0], last_start[1], start[0], start[1])
         self.visited[gx1:gx2, gy1:gy2][rr, cc] += 1
 
@@ -458,14 +471,14 @@ class UniGoal_Agent():
                 draw_line(last_start, start,
                              self.visited_vis[gx1:gx2, gy1:gy2])
 
-        # relieve the stuck goal
+        # 处理卡住目标的问题
         x1, y1, t1 = self.last_loc
         x2, y2, _ = self.curr_loc
         if abs(x1 - x2) >= 0.05 or abs(y1 - y2) >= 0.05:
             self.been_stuck = False
             self.stuck_goal = None
 
-        # Collision check
+        # 碰撞检查
         if self.last_action == 1:
             x1, y1, t1 = self.last_loc
             x2, y2, _ = self.curr_loc
@@ -483,7 +496,7 @@ class UniGoal_Agent():
                 self.col_width = 1                
 
             dist = pu.get_l2_distance(x1, x2, y1, y2)
-            if dist < args.collision_threshold:  # Collision
+            if dist < args.collision_threshold:  # 碰撞
                 width = self.col_width
                 for i in range(length):
                     for j in range(width):
@@ -500,7 +513,11 @@ class UniGoal_Agent():
                                                     self.collision_map.shape)
                         self.collision_map[r, c] = 1
 
-        local_goal, stop = self.get_local_goal(map_pred, start, np.copy(goal),
+        # 存储规划输入，供 get_local_goal 使用
+        self.planner_inputs = planner_inputs
+        
+        # 获取局部目标
+        local_goal, stop = self.get_local_goal(grid, start, np.copy(goal),
                                   planning_window)
 
         if stop and planner_inputs['found_goal'] == 1:
@@ -527,58 +544,64 @@ class UniGoal_Agent():
         return action
 
     def get_local_goal(self, grid, start, goal, planning_window):
+        """
+        获取到达全局目标的局部目标
+        同时考虑可达性和位置价值
+        """
         [gx1, gx2, gy1, gy2] = planning_window
-
-        x1, y1, = 0, 0
-        x2, y2 = grid.shape
-
-        traversible = skimage.morphology.binary_dilation(
-            grid[x1:x2, y1:y2],
-            self.selem) != True
-        traversible[self.visited[gx1:gx2, gy1:gy2][x1:x2, y1:y2] > 0] = 1
-        traversible[self.collision_map[gx1:gx2, gy1:gy2]
-                    [x1:x2, y1:y2] == 1] = 0
+        H, W = grid.shape
+        start = pu.threshold_poses(start, grid.shape)
         
-        traversible[int(start[0] - x1) - 1:int(start[0] - x1) + 2,
-                    int(start[1] - y1) - 1:int(start[1] - y1) + 2] = 1
-
-        traversible = self.add_boundary(traversible)
-        goal = self.add_boundary(goal, value=0)
-        visited = self.add_boundary(self.visited[gx1:gx2, gy1:gy2][x1:x2, y1:y2], value=0)
-
+        goal_map = goal.copy()
+        
+        # 如果可用，使用价值地图影响目标选择
+        # 当有多条路径可用时，应该优先考虑高价值位置
+        value_weight = 0.3  # 价值地图影响的权重
+        
+        if hasattr(self, 'planner_inputs') and 'value_map' in self.planner_inputs:
+            value_map = self.planner_inputs['value_map']
+            
+            # 如果有多个目标候选，基于价值进行优先排序
+            if goal_map.sum() > 1:
+                goal_y, goal_x = np.where(goal_map > 0)
+                if len(goal_y) > 0:
+                    # 获取每个目标候选的价值
+                    goal_values = [value_map[y, x] for y, x in zip(goal_y, goal_x)]
+                    # 选择价值最高的目标
+                    max_value_idx = np.argmax(goal_values)
+                    new_goal_map = np.zeros_like(goal_map)
+                    new_goal_map[goal_y[max_value_idx], goal_x[max_value_idx]] = 1
+                    goal_map = new_goal_map
+        
+        # 获取地图中有效的、已探索的区域
+        traversible = grid.copy()
+        
+        # 创建FMM规划器并设置起始位置和可通行区域
+        from src.utils.fmm.fmm_planner import FMMPlanner
         planner = FMMPlanner(traversible)
-        if self.global_goal is not None or self.temp_goal is not None:
-            selem = skimage.morphology.disk(10)
-            goal = skimage.morphology.binary_dilation(
-                goal, selem) != True
-        elif self.stuck_goal is not None:
-            selem = skimage.morphology.disk(1)
-            goal = skimage.morphology.binary_dilation(
-                goal, selem) != True
-        else:
-            selem = skimage.morphology.disk(3)
-            goal = skimage.morphology.binary_dilation(
-                goal, selem) != True
-        goal = 1 - goal * 1.
-        planner.set_multi_goal(goal)
-
-        state = [start[0] - x1 + 1, start[1] - y1 + 1]
-
-
-        if self.global_goal is not None:
-            st_dis = pu.get_l2_dis_point_map(state, goal) * self.args.map_resolution
-            fmm_dist = planner.fmm_dist * self.args.map_resolution 
-            dis = fmm_dist[start[0]+1, start[1]+1]
-            if st_dis < 100 and dis/st_dis > 2:
-                return (0, 0), True
-
-        stg_x, stg_y, replan, stop = planner.get_short_term_goal(state)
-        if replan:
-            stg_x, stg_y, _, stop = planner.get_short_term_goal(state, 2)
-
-        stg_x, stg_y = stg_x + x1 - 1, stg_y + y1 - 1
-
-        return (stg_x, stg_y), stop
+        
+        # 找到目标位置
+        goal_y, goal_x = np.where(goal_map > 0)
+        if len(goal_y) == 0:
+            # 如果没有目标，停止
+            return start, True
+            
+        # 选择第一个目标点
+        goal_pos = [goal_x[0], goal_y[0]]
+        
+        # 设置目标
+        planner.set_goal(goal_pos)
+        
+        # 获取从起点到目标的最短路径
+        stg_x, stg_y = start
+        stg_x, stg_y, replan, stop = planner.get_short_term_goal(start)
+        
+        # 检查是否到达目标
+        if stop:
+            return start, True
+        
+        # 返回局部目标
+        return (int(stg_x), int(stg_y)), False
 
     def add_boundary(self, mat, value=1):
         h, w = mat.shape
@@ -610,11 +633,21 @@ class UniGoal_Agent():
         goal = cv2.dilate(goal, selem)
         
         goal = self.add_boundary(goal, value=0)
-        planner.set_multi_goal(goal)
+        
+        # 找到目标位置坐标
+        goal_y, goal_x = np.where(goal > 0)
+        if len(goal_y) == 0:
+            return None
+            
+        # 创建一个目标点
+        goal_pos = [int(goal_x[0]), int(goal_y[0])]
+        
+        # 设置目标位置
+        planner.set_goal(goal_pos)
+        
         fmm_dist = planner.fmm_dist * self.args.map_resolution 
         dis = fmm_dist[start[0]+1, start[1]+1]
 
-        return dis
         if dis < fmm_dist.max() and dis/st_dis < 2:
             return dis
         else:
@@ -802,6 +835,27 @@ class UniGoal_Agent():
             rgb_visualization = cv2.resize(self.rgb_vis, (360, 480), interpolation=cv2.INTER_NEAREST)
 
         vis_image = self.vis_image_background.copy()
+        
+        # 可视化价值地图
+        if 'value_map' in inputs:
+            value_map = inputs['value_map']
+            # 创建热力图可视化
+            value_map_vis = cv2.normalize(value_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+            value_map_color = cv2.applyColorMap(value_map_vis, cv2.COLORMAP_JET)
+            value_map_vis = cv2.resize(value_map_color, (240, 240), interpolation=cv2.INTER_NEAREST)
+            
+            # 将价值地图绘制在可视化界面上
+            vis_image[290:530, 25:265] = value_map_vis
+            cv2.putText(vis_image, "Value Map", (25, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            # 添加价值地图的图例
+            cv2.rectangle(vis_image, (25, 540), (265, 560), (0, 0, 0), -1)
+            for i in range(240):
+                color = cv2.applyColorMap(np.array([[int(i * 255 / 240)]], dtype=np.uint8), cv2.COLORMAP_JET)[0, 0]
+                cv2.line(vis_image, (25 + i, 540), (25 + i, 560), (int(color[0]), int(color[1]), int(color[2])), 1)
+            cv2.putText(vis_image, "Low", (25, 580), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(vis_image, "High", (225, 580), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
         if self.args.goal_type == 'ins-image':
             instance_imagegoal = self.instance_imagegoal
             h, w = instance_imagegoal.shape[0], instance_imagegoal.shape[1]

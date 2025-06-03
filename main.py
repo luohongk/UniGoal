@@ -157,6 +157,7 @@ def main():
         if not agent_input['wait'] and navigate_steps % 2 == 0:
             graph.set_observations(obs)
             graph.update_scenegraph()
+            graph.update_value_map(BEV_map)
 
         # ------------------------------------------------------------------
 
@@ -181,7 +182,8 @@ def main():
                 goal[1] = goal[1] - BEV_map.local_map_boundary[0, 2]
                 if 0 <= goal[0] < args.local_width and 0 <= goal[1] < args.local_height:
                     global_goals = goal
-
+            
+            graph.update_value_map(BEV_map)
 
         # ------------------------------------------------------------------
 
@@ -192,6 +194,8 @@ def main():
         goal_maps[global_goals[0], global_goals[1]] = 1
 
         exp_goal_maps = goal_maps.copy()
+        
+        value_map = BEV_map.get_value_map()
 
         agent_input = {}
         agent_input['map_pred'] = BEV_map.local_map[0, 0, :, :].cpu().numpy()
@@ -204,6 +208,7 @@ def main():
         agent_input['wait'] = wait_env or finished
         agent_input['sem_map'] = BEV_map.local_map[0, 4:11, :, :
                                         ].cpu().numpy()
+        agent_input['value_map'] = value_map
 
         if args.visualize:
             BEV_map.local_map[0, 10, :, :] = 1e-5
