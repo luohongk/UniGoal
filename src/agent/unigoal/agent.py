@@ -844,17 +844,17 @@ class UniGoal_Agent():
             value_map_color = cv2.applyColorMap(value_map_vis, cv2.COLORMAP_JET)
             value_map_vis = cv2.resize(value_map_color, (240, 240), interpolation=cv2.INTER_NEAREST)
             
-            # 将价值地图绘制在可视化界面上
-            vis_image[290:530, 25:265] = value_map_vis
-            cv2.putText(vis_image, "Value Map", (25, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            # 将价值地图绘制在可视化界面右侧（改变位置，避免遮挡左上角文字）
+            vis_image[50:290, 1140:1380] = value_map_vis
+            cv2.putText(vis_image, "Value Map", (1140, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             
             # 添加价值地图的图例
-            cv2.rectangle(vis_image, (25, 540), (265, 560), (0, 0, 0), -1)
+            cv2.rectangle(vis_image, (1140, 300), (1380, 320), (0, 0, 0), -1)
             for i in range(240):
                 color = cv2.applyColorMap(np.array([[int(i * 255 / 240)]], dtype=np.uint8), cv2.COLORMAP_JET)[0, 0]
-                cv2.line(vis_image, (25 + i, 540), (25 + i, 560), (int(color[0]), int(color[1]), int(color[2])), 1)
-            cv2.putText(vis_image, "Low", (25, 580), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            cv2.putText(vis_image, "High", (225, 580), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.line(vis_image, (1140 + i, 300), (1140 + i, 320), (int(color[0]), int(color[1]), int(color[2])), 1)
+            cv2.putText(vis_image, "Low", (1140, 340), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(vis_image, "High", (1340, 340), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
         if self.args.goal_type == 'ins-image':
             instance_imagegoal = self.instance_imagegoal
